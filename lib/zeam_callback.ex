@@ -4,15 +4,17 @@ defmodule ZeamCallback do
   """
 
   @doc """
-  Hello world.
+  test of callback thread.
 
   ## Examples
 
-      iex> ZeamCallback.hello
-      :world
+      iex> import ExUnit.CaptureIO
+      iex> capture_io(fn -> ZeamCallback.call(fn (a) -> (IO.puts a) end, "function", fn () -> (IO.puts "callbacked") end) end)
+      "function\\ncallbacked\\n"
 
   """
-  def hello do
-    :world
+  def call(function, arg, callback) do
+    function.(arg)
+    callback.()
   end
 end
