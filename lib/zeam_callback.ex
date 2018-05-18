@@ -40,15 +40,18 @@ defmodule ZeamCallback do
   	  if threads[tid] do
   	    spawn(%{:queue => queue, :threads => threads, :next_tid => tid + 1})
   	  else
-  	  	%{:queue => [{tid, func} | queue], :threads => Map.put(threads, tid, &(&1)), :next_tid => tid + 1}
+  	  	%{:queue => queue ++ [{:thread, tid, func}], :threads => Map.put(threads, tid, &(&1)), :next_tid => tid + 1}
   	  end
   	end
 
     def worker(receptor) do
-      worker(receptor, %{:queue => [], :threads => %{}, :next_tid => 0})
+      # IO.puts "Worker wakeup"
+      new_env = %{:queue => [], :threads => %{}, :next_tid => 0}
+      worker(receptor, new_env)
     end
 
     def worker(receptor, env) do
+      # IO.puts "Worker loop"
       receive do
         {:queue} ->
           send(receptor, {:queue, env})
@@ -61,15 +64,18 @@ defmodule ZeamCallback do
           send(receptor, {:queue, new_env})
           worker(receptor, new_env)
         {:spawn, func} ->
+          # IO.puts "Worker receive :spawn/1"
           new_env = spawn(env, func)
           send(receptor, {:queue, new_env})
           worker(receptor, new_env)
         {:spawn, func, pid} ->
+          # IO.puts "Worker receive :spawn/2"
           new_env = spawn(env, func)
           send(receptor, {:queue, new_env})
           send(pid, {:tid, new_env[:next_tid] - 1})
           worker(receptor, new_env)
         {:spawn, func, pid, tid} ->
+          # IO.puts "Worker receive :spawn/3"
           new_env = spawn(env, func)
           send(receptor, {:queue, new_env})
           send(pid, {:send, tid, {:tid, new_env[:next_tid] - 1}})
@@ -88,19 +94,27 @@ defmodule ZeamCallback do
           worker(receptor, new_env)
       after
         0 ->
+          # IO.puts "Worker read queue"
           case env[:queue] do
             [] ->
               Process.sleep(10)
               worker(receptor, env)
             [head | queue] ->
-  	        new_env = %{:queue => queue, :threads => env[:threads], :next_tid => env[:next_tid]}
-  	        send(receptor, {:queue, new_env})
-  	        case head do
-  	          {:message, tid, mes} -> env[:threads][tid].(mes)
-  	          {:thread, tid, func} -> func.(tid)
-  	          _ -> Process.sleep(10)
-  	        end
-  	        worker(receptor, new_env)
+              # IO.puts "Worker head"
+  	          new_env = %{:queue => queue, :threads => env[:threads], :next_tid => env[:next_tid]}
+  	          send(receptor, {:queue, new_env})
+  	          # IO.puts "before case head: #{elem(head, 0)}"
+  	          case head do
+  	            {:message, tid, mes} -> 
+  	              env[:threads][tid].(mes)
+  	            {:thread, tid, func} ->
+  	              # IO.puts "Worker invoke func"
+  	              func.(tid)
+  	            _ ->
+  	              # IO.puts "Worker sleep..." 
+  	              Process.sleep(10)
+  	          end
+  	          worker(receptor, new_env)
   	      end
       end
     end
@@ -112,38 +126,46 @@ defmodule ZeamCallback do
   	end
 
     def receptor() do
+      # IO.puts "start Receptor"
       receptor(spawn(Worker, :worker, [self()]))
     end
 
     def receptor(worker) do
+      # IO.puts "Receptor send :queue to Worker"
       send(worker, {:queue})
       receptor(worker, nil)
     end
 
     def receptor(worker, env) do
+      # IO.puts "Receptor loop"
       receive do
         {:queue, new_env} ->
-          send(worker, {:ping})
+          # IO.puts "Receptor receive :queue"
           receptor(worker, new_env)
         {:ping} ->
-          send(worker, {:ping})
+          # IO.puts "Receptor receive :ping"
           receptor(worker, env)
         {:spawn, func, pid, tid} ->
+          # IO.puts "Receptor receive :spawn/3"
           send(worker, {:spawn, func, pid, tid})
           receptor(worker, env)
         {:spawn, func, pid} ->
+          # IO.puts "Receptor receive :spawn/2"
           send(worker, {:spawn, func, pid})
           receptor(worker, env)
         {:spawn, func} ->
+          # IO.puts "Receptor receive :spawn/1"
           send(worker, {:spawn, func})
           receptor(worker, env)
         {:send, tid, msg} ->
           send(worker, {:send, tid, msg}) # TODO 該当がない場合の処理
           receptor(worker, env)
       after
-        1_000 ->
-          "nothing after 1s" # TODO workerの再起動
+        100 ->
+          send(worker, {:ping})
           receptor(worker, env)
+
+        # TODO workerの再起動
       end
     end
   end
