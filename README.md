@@ -1,6 +1,6 @@
 # ZeamCallback
 
-**TODO: Add description**
+ZeamCallback provides management functions for light-weight callback threads
 
 ## Installation
 
